@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>YouTube Data API Quickstart</title>
+    <meta charset='utf-8' />
+</head>
+
+<body>
+    <p>YouTube Data API Quickstart</p>
+
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize-button" style="display: none;">Authorize</button>
+    <div id="authorized-inputs" style="display: none;">
+        <button id="signout-button">Sign Out</button>
+        <div id="sync-form">
+            <input id="channel-input" placeholder="Channel ID"/>
+            <button id="sync-button">Sync Playlist with YouTube</button>
+        </div>
+        <button id="sort-by-latency-button">Sort by Latency</button>
+        <button id="sort-by-playlist-position-button">Sort by Playlist Position</button><br/>
+
+        <font size=1>
+            <b>(</b><i> currentIndex </i><b>|</b><i> playlistIndex </i><b>). </b><i> channelId </i><b>:</b><i> positionInChannel </i><b>/</b><i> channelTotal </i><b> </b><i> title </i><b> </b><i> latency </i><b>d/m = </b><i> daysFromPublished </i><b>/</b><i> videoDurationInMinutes </i><b> </b><i> publishedTime </i><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;previousVideoInTheSameChannel
+        </font>
+
+        <pre id="status"></pre>
+        <pre id="content"></pre>
+        <pre id="videos"></pre>
+    </div>
+
+    <script type="text/javascript">
+        // Client ID and API key from the Developer Console
+        var CLIENT_ID = '<your_client_id>';
+
+        // Array of API discovery doc URLs for APIs used by the quickstart
+        var DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest"];
+
+        // Authorization scopes required by the API. If using multiple scopes,
+        // separated them with spaces.
+        var SCOPES = 'https://www.googleapis.com/auth/youtube.readonly';
+
+        var authorizeButton = document.getElementById('authorize-button');
+        var signoutButton = document.getElementById('signout-button');
+        var syncButton = document.getElementById('sync-button');
+        var sortByLatencyButton = document.getElementById('sort-by-latency-button');
+        var sortByPlaylistPositionButton = document.getElementById('sort-by-playlist-position-button');
+        var syncForm = document.getElementById('sync-form');
+        var channelInput = document.getElementById('channel-input');
+
+        /**
+         *  On load, called to load the auth2 library and API client library.
+         */
+        function handleClientLoad() {
+            setTimeout(() => gapi.load('client:auth2', initClient), 1000);
+        }
+
+        /**
+         *  Initializes the API client library and sets up sign-in state
+         *  listeners.
+         */
+        function initClient() {
+            gapi.client.init({
+                discoveryDocs: DISCOVERY_DOCS,
+                clientId: CLIENT_ID,
+                scope: SCOPES
+            }).then(function () {
+                // Listen for sign-in state changes.
+                gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+                // Handle the initial sign-in state.
+                updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+                authorizeButton.onclick = handleAuthClick;
+                signoutButton.onclick = handleSignoutClick;
+                syncButton.onclick = () => getPlaylistItems();
+                sortByLatencyButton.onclick = sortByDaysPerMinute;
+                sortByPlaylistPositionButton.onclick = sortByPlaylistPosition;
+            });
+        }
+
+        /**
+         *  Called when the signed in status changes, to update the UI
+         *  appropriately. After a sign-in, the API is called.
+         */
+        function updateSigninStatus(isSignedIn) {
+            if (isSignedIn) {
+                authorizeButton.style.display = 'none';
+                document.getElementById('authorized-inputs').style.display = 'block';
+                // getChannel();
+                // getPlaylistItems();
+                readPlaylistIdFromFile();
+                readVideosFromFile();
+            } else {
+                authorizeButton.style.display = 'block';
+                document.getElementById('authorized-inputs').style.display = 'none';
+            }
+        }
+
+        /**
+         *  Sign in the user upon button click.
+         */
+        function handleAuthClick(event) {
+            gapi.auth2.getAuthInstance().signIn();
+        }
+
+        /**
+         *  Sign out the user upon button click.
+         */
+        function handleSignoutClick(event) {
+            gapi.auth2.getAuthInstance().signOut();
+        }
+
+        /**
+         * Append text to a pre element in the body, adding the given message
+         * to a text node in that element. Used to display info from API response.
+         *
+         * @param {string} message Text to be placed in pre element.
+         */
+        function appendPre(message) {
+            var pre = document.getElementById('content');
+            var textContent = document.createTextNode(message + '\n');
+            pre.appendChild(textContent);
+        }
+
+        function updateVideos() {
+            var text = '';
+            var now = moment();
+            videos.forEach(function (video) {
+                const ageDays = moment.duration(now.diff(moment(video.publishedAt))).asDays();
+                const durationMinutes = moment.duration(video.duration).asMinutes();
+                const daysPerMinute = ageDays / durationMinutes;
+                video.daysPerMinute = daysPerMinute;
+
+                text += 
+                    '<input type="checkbox" onclick="handleClick(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
+                    '<b>' + formatVideoTitle(video) + '</b> ' +
+                    parseInt(video.daysPerMinute) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
+                    moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss') +
+                    formatPreviousVideo(video) + '<br/>';
+                    
+            });
+            document.getElementById('videos').innerHTML = text;
+        }
+
+        function formatVideoTitle(video) {
+            return (video.watched ? ' <strike>' : '') +
+                '(' + videos.indexOf(video) + '|' + video.playlistPosition + '). ' +
+                formatChannelInfo(video) + ' <a href="https://www.youtube.com/watch?v=' + video.id + '" target="_blank">' + video.title + '</a>' +
+                (video.watched ? ' </strike>' : '');
+        }
+
+        function handleClick(checkbox) {
+            const selected = videos.filter(video => video.id === checkbox.id);
+            if (selected.length > 0) {
+                selected[0].watched = checkbox.checked;
+                writeVideosToFile();
+                updateVideos();
+            }
+        }
+
+        function formatChannelInfo(video) {
+            const channelId = video.channelId;
+            const channel = channels[channelId];
+            return Object.keys(channels).indexOf(channelId) + ':' + (channel.indexOf(video) + 1) + '/' + channel.length;
+        }
+
+        function formatPreviousVideo(video) {
+            const channelId = video.channelId;
+            const channel = channels[channelId];
+            const index = channel.indexOf(video);
+            if (index > 0) {
+                const previousVideo = channel[index - 1];
+                return '<br/>' +
+                    '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
+                    '<i>' + formatVideoTitle(previousVideo) + '</i>';
+            } else {
+                return '';
+            }
+        }
+
+        /**
+         * Print files.
+         */
+        function getChannel() {
+            gapi.client.youtube.channels.list({
+                'part': 'snippet,contentDetails,statistics',
+                'forUsername': 'GoogleDevelopers'
+            }).then(function (response) {
+                var channel = response.result.items[0];
+                appendPre('This channel\'s ID is ' + channel.id + '. ' +
+                    'Its title is \'' + channel.snippet.title + ', ' +
+                    'and it has ' + channel.statistics.viewCount + ' views.');
+            });
+        }
+
+        var channels = [];
+        var videos = [];
+        var watchedIds = [];
+
+        function getPlaylistItems(nextPageToken = null) {
+            gapi.client.youtube.playlistItems.list({
+                'maxResults': 50,
+                'part': 'snippet',
+                'playlistId': channelInput.value,
+                'pageToken': nextPageToken
+            }).then(function (response) {
+                if (!nextPageToken) {
+                    var watchedIds = [];
+                    videos.forEach(video => { if (video.watched) watchedIds.push(video.id) })
+                    channels = [];
+                    videos = [];
+                    writePlaylistIdToFile();
+                }
+
+                var newVideos = [];
+
+                response.result.items.forEach(function (item) {
+                    newVideos.push({
+                        title: item.snippet.title,
+                        thumbnail: item.snippet.thumbnails ? item.snippet.thumbnails.default.url : null,
+                        playlistPosition: item.snippet.position,
+                        id: item.snippet.resourceId.videoId,
+                        watched: watchedIds.includes(item.snippet.resourceId.videoId)
+                    });
+                });
+
+                newVideos.forEach(function (video) {
+                    videos.push(video);
+                    // appendPre(video.playlistPosition + '. ' + video.publishedAt + ' ' + video.title);
+
+                    const channel = channels[video.channelId] || [];
+                    channel.push(video);
+                    channels[video.channelId] = channel;
+
+                    updateVideos();
+                });
+
+                getVideoDetails(newVideos);
+
+                if (response.result.nextPageToken) {
+                    setTimeout(() => getPlaylistItems(response.result.nextPageToken), 100);
+                }
+            }).catch(exception => {
+                console.log(exception);
+                alert(exception.result.error.message);
+            });
+        }
+
+        function getVideoDetails(videos) {
+            gapi.client.youtube.videos.list({
+                'part': 'snippet,contentDetails,statistics',
+                'id': videos.map(video => video.id).join(',')
+            }).then(function (response) {
+                response.result.items.forEach(item => {
+                    const video = videos.filter(video => video.id === item.id)[0];
+                    if (video) {
+                        video.duration = item.contentDetails.duration;
+                        video.statistics = item.statistics;
+                        video.publishedAt = item.snippet.publishedAt;
+                        video.channelId = item.snippet.channelId;
+                        updateChannels(video);
+
+                        
+                    }
+                });
+                updateVideos();
+                writeVideosToFile();
+            });
+        }
+
+        function updateChannels(video) {
+            const channel = channels[video.channelId] || [];
+            channel.push(video);
+            channel.sort((video1, video2) => moment(video1.publishedAt).diff(moment(video2.publishedAt)))
+            channels[video.channelId] = channel;
+        }
+
+        function writeVideosToFile() {
+            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                    localstorage.root.getFile("videos.txt", { create: true }, function (fileEntry) {
+                        fileEntry.createWriter(function (fileWriter) {
+                            fileWriter.seek(0);
+                            fileWriter.truncate(0);
+
+                            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                                    localstorage.root.getFile("videos.txt", { create: true }, function (fileEntry) {
+                                        fileEntry.createWriter(function (fileWriter) {
+                                            console.log(JSON.stringify(videos));
+                                            var blob = new Blob([JSON.stringify(videos)], { type: "text/plain" });
+                                            fileWriter.write(blob);
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        }
+
+        function readVideosFromFile() {
+            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                    localstorage.root.getFile("videos.txt", { create: true }, function (fileEntry) {
+                        fileEntry.file(function (file) {
+                            var reader = new FileReader();
+
+                            reader.onloadend = function (e) {
+                                videos = JSON.parse(this.result);
+                                videos.forEach(video => updateChannels(video));
+                                updateVideos();
+                            };
+
+                            reader.readAsText(file);
+                        }, errorHandler);
+
+                    });
+                });
+            });
+        }
+        
+        function writePlaylistIdToFile() {
+            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                    localstorage.root.getFile("playlist_id.txt", { create: true }, function (fileEntry) {
+                        fileEntry.createWriter(function (fileWriter) {
+                            fileWriter.seek(0);
+                            fileWriter.truncate(0);
+
+                            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                                    localstorage.root.getFile("playlist_id.txt", { create: true }, function (fileEntry) {
+                                        fileEntry.createWriter(function (fileWriter) {
+                                            var blob = new Blob([channelInput.value], { type: "text/plain" });
+                                            fileWriter.write(blob);
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        }
+
+        function readPlaylistIdFromFile() {
+            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
+                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
+                    localstorage.root.getFile("playlist_id.txt", { create: true }, function (fileEntry) {
+                        fileEntry.file(function (file) {
+                            var reader = new FileReader();
+
+                            reader.onloadend = function (e) {
+                                channelInput.value = this.result;
+                            };
+
+                            reader.readAsText(file);
+                        }, errorHandler);
+
+                    });
+                });
+            });
+        }
+
+        function errorHandler(e) {
+            var msg = '';
+
+            switch (e.code) {
+                case FileError.QUOTA_EXCEEDED_ERR:
+                    msg = 'QUOTA_EXCEEDED_ERR';
+                    break;
+                case FileError.NOT_FOUND_ERR:
+                    msg = 'NOT_FOUND_ERR';
+                    break;
+                case FileError.SECURITY_ERR:
+                    msg = 'SECURITY_ERR';
+                    break;
+                case FileError.INVALID_MODIFICATION_ERR:
+                    msg = 'INVALID_MODIFICATION_ERR';
+                    break;
+                case FileError.INVALID_STATE_ERR:
+                    msg = 'INVALID_STATE_ERR';
+                    break;
+                default:
+                    msg = 'Unknown Error';
+                    break;
+            };
+
+            console.log('Error: ' + msg);
+        }
+
+        function sortByDaysPerMinute() {
+            videos.sort((video1, video2) => video2.daysPerMinute - video1.daysPerMinute);
+            updateVideos();
+        }
+
+        function sortByPlaylistPosition() {
+            videos.sort((video1, video2) => parseInt(video1.playlistPosition) - parseInt(video2.playlistPosition));
+            updateVideos();
+        }
+    </script>
+
+    <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleClientLoad()"
+        onreadystatechange="if (this.readyState === 'complete') this.onload()">
+        </script>
+    <script async defer type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js">
+        </script>
+</body>
+
+</html>
