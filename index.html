@@ -18,6 +18,7 @@
             <button id="sync-button">Sync Playlist with YouTube</button>
         </div>
         <button id="sort-by-latency-button">Sort by Latency</button>
+        <button id="sort-by-latency-respect-order-in-channel-button">Sort by Latency Respecting Order in Channel</button>
         <button id="sort-by-playlist-position-button">Sort by Playlist Position</button><br/>
 
         <font size=1>
@@ -45,6 +46,7 @@
         var signoutButton = document.getElementById('signout-button');
         var syncButton = document.getElementById('sync-button');
         var sortByLatencyButton = document.getElementById('sort-by-latency-button');
+        var sortByLatencyRespectingOrderInChannelButton = document.getElementById('sort-by-latency-respect-order-in-channel-button');
         var sortByPlaylistPositionButton = document.getElementById('sort-by-playlist-position-button');
         var syncForm = document.getElementById('sync-form');
         var channelInput = document.getElementById('channel-input');
@@ -74,7 +76,8 @@
                 authorizeButton.onclick = handleAuthClick;
                 signoutButton.onclick = handleSignoutClick;
                 syncButton.onclick = () => getPlaylistItems();
-                sortByLatencyButton.onclick = sortByDaysPerMinute;
+                sortByLatencyButton.onclick = () => sortByDaysPerMinute();
+                sortByLatencyRespectingOrderInChannelButton.onclick = () => sortByDaysPerMinute(true);
                 sortByPlaylistPositionButton.onclick = sortByPlaylistPosition;
             });
         }
@@ -132,8 +135,8 @@
                 const daysPerMinute = ageDays / durationMinutes;
                 video.daysPerMinute = daysPerMinute;
 
-                text += 
-                    '<input type="checkbox" onclick="handleClick(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
+                text += '<input type="radio" name="current-position" onclick="handleSelect(this);" value="' + video.id + '"' + (video.id === currentVideoId ? ' checked' : '') + '>' +
+                    '<input type="checkbox" onclick="handleCheck(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
                     '<b>' + formatVideoTitle(video) + '</b> ' +
                     parseInt(video.daysPerMinute) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
                     moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss') +
@@ -144,13 +147,25 @@
         }
 
         function formatVideoTitle(video) {
-            return (video.watched ? ' <strike>' : '') +
-                '(' + videos.indexOf(video) + '|' + video.playlistPosition + '). ' +
+            return (video.watched ? '<strike>' : '') +
+                '(' + fillWithZeros(videos.indexOf(video)) + '|' + fillWithZeros(video.playlistPosition) + '). ' +
                 formatChannelInfo(video) + ' <a href="https://www.youtube.com/watch?v=' + video.id + '" target="_blank">' + video.title + '</a>' +
-                (video.watched ? ' </strike>' : '');
+                (video.watched ? '</strike>' : '');
         }
 
-        function handleClick(checkbox) {
+        function fillWithZeros(number) {
+            if (number < 10) {
+                return '0' + number;
+            } else {
+                return number;
+            }
+        }
+
+        function handleSelect(radio) {
+            currentVideoId = radio.value;
+        }
+
+        function handleCheck(checkbox) {
             const selected = videos.filter(video => video.id === checkbox.id);
             if (selected.length > 0) {
                 selected[0].watched = checkbox.checked;
@@ -162,7 +177,7 @@
         function formatChannelInfo(video) {
             const channelId = video.channelId;
             const channel = channels[channelId];
-            return Object.keys(channels).indexOf(channelId) + ':' + (channel.indexOf(video) + 1) + '/' + channel.length;
+            return fillWithZeros(Object.keys(channels).indexOf(channelId)) + ':' + fillWithZeros(channel.indexOf(video) + 1) + '/' + fillWithZeros(channel.length);
         }
 
         function formatPreviousVideo(video) {
@@ -171,9 +186,13 @@
             const index = channel.indexOf(video);
             if (index > 0) {
                 const previousVideo = channel[index - 1];
-                return '<br/>' +
-                    '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
-                    '<i>' + formatVideoTitle(previousVideo) + '</i>';
+                if (!previousVideo.watched) {
+                    return '<br/>' +
+                        '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
+                        '<font size="1"><i>' + formatVideoTitle(previousVideo) + '</i></font>';
+                } else {
+                    return '';
+                }
             } else {
                 return '';
             }
@@ -197,6 +216,7 @@
         var channels = [];
         var videos = [];
         var watchedIds = [];
+        var currentVideoId = null;
 
         function getPlaylistItems(nextPageToken = null) {
             gapi.client.youtube.playlistItems.list({
@@ -260,8 +280,6 @@
                         video.publishedAt = item.snippet.publishedAt;
                         video.channelId = item.snippet.channelId;
                         updateChannels(video);
-
-                        
                     }
                 });
                 updateVideos();
@@ -392,9 +410,34 @@
             console.log('Error: ' + msg);
         }
 
-        function sortByDaysPerMinute() {
+        function sortByDaysPerMinute(respectOrderInChannel = false) {
             videos.sort((video1, video2) => video2.daysPerMinute - video1.daysPerMinute);
+
+            if (respectOrderInChannel) {
+                prioritizeByOrderInChannel();
+            }
+
             updateVideos();
+        }
+
+        function prioritizeByOrderInChannel() {
+            videos.forEach((video, index) => {
+                const channel = channels[video.channelId]; 
+                const indexInChannel = channel.indexOf(video);
+                let indexToSwap = index;
+                for (let i = indexInChannel - 1; i > -1; i--) {
+                    const prevoisVideo = channel[i];
+                    const indexInList = videos.indexOf(prevoisVideo);
+                    if (indexInList > index) {
+                        indexToSwap = indexInList;
+                    }
+                }
+                if (indexToSwap !== index) {
+                    const videoToReplace = videos[indexToSwap];
+                    videos[index] = videoToReplace;
+                    videos[indexToSwap] = video;
+                }
+            });
         }
 
         function sortByPlaylistPosition() {
