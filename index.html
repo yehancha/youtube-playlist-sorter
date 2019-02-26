@@ -2,12 +2,12 @@
 <html>
 
 <head>
-    <title>YouTube Data API Quickstart</title>
+    <title>YouTube Playlist Sorter</title>
     <meta charset='utf-8' />
 </head>
 
 <body>
-    <p>YouTube Data API Quickstart</p>
+    <p>YouTube Playlist Sorter</p>
 
     <!--Add buttons to initiate auth sequence and sign out-->
     <button id="authorize-button" style="display: none;">Authorize</button>
@@ -138,7 +138,7 @@
                 text += '<input type="radio" name="current-position" onclick="handleSelect(this);" value="' + video.id + '"' + (video.id === currentVideoId ? ' checked' : '') + '>' +
                     '<input type="checkbox" onclick="handleCheck(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
                     '<b>' + formatVideoTitle(video) + '</b> ' +
-                    parseInt(video.daysPerMinute) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
+                    video.daysPerMinute.toFixed(2) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
                     moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss') +
                     formatPreviousVideo(video) + '<br/>';
                     
