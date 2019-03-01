@@ -129,11 +129,18 @@
         function updateVideos() {
             var text = '';
             var now = moment();
+
+            var totalMinutes = 0;
+            var totalMinutesLastWeek = 0;
+
             videos.forEach(function (video) {
-                const ageDays = moment.duration(now.diff(moment(video.publishedAt))).asDays();
+                const ageDays = moment.duration(now.diff(video.publishedAt)).asDays();
                 const durationMinutes = moment.duration(video.duration).asMinutes();
                 const daysPerMinute = ageDays / durationMinutes;
                 video.daysPerMinute = daysPerMinute;
+
+                totalMinutes += durationMinutes;
+                if (ageDays < 7) totalMinutesLastWeek += durationMinutes;                    
 
                 text += '<input type="radio" name="current-position" onclick="handleSelect(this);" value="' + video.id + '"' + (video.id === currentVideoId ? ' checked' : '') + '>' +
                     '<input type="checkbox" onclick="handleCheck(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
@@ -141,8 +148,11 @@
                     video.daysPerMinute.toFixed(2) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
                     moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss') +
                     formatPreviousVideo(video) + '<br/>';
-                    
             });
+
+            text += '<br/>Published rate Last Week: ' + Math.ceil(totalMinutesLastWeek / 7) + 'm/d' +
+                '<br/>To complete in a month: ' + Math.ceil(totalMinutes / 30) + 'm/d';
+
             document.getElementById('videos').innerHTML = text;
         }
 
