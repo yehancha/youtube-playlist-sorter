@@ -146,8 +146,11 @@
                     '<input type="checkbox" onclick="handleCheck(this);" id="' + video.id + '"' + (video.watched ? ' checked' : '') + '>' +
                     '<b>' + formatVideoTitle(video) + '</b> ' +
                     video.daysPerMinute.toFixed(2) + 'd/m = ' + parseInt(ageDays) + '/' + parseInt(durationMinutes) + ' ' +
-                    moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss') +
-                    formatPreviousVideo(video) + '<br/>';
+                    moment(video.publishedAt).format('YYYY-MM-DD HH:mm:ss');
+
+                if (prioritizingByOrderInChannel) text += formatSwappedVideo(video);
+                
+                text += formatPreviousVideo(video) + '<br/>';
             });
 
             text += '<br/>Published rate Last Week: ' + Math.ceil(totalMinutesLastWeek / 7) + 'm/d' +
@@ -188,6 +191,17 @@
             const channelId = video.channelId;
             const channel = channels[channelId];
             return fillWithZeros(Object.keys(channels).indexOf(channelId)) + ':' + fillWithZeros(channel.indexOf(video) + 1) + '/' + fillWithZeros(channel.length);
+        }
+
+        function formatSwappedVideo(video) {
+            const swappedVideo = video.swappedUp;
+            if (swappedVideo && !swappedVideo.watched) {
+                return '<br/>' +
+                    '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
+                    '<font size="1"><i>REPLACED ' + formatVideoTitle(swappedVideo) + '</i></font>';
+            } else {
+                return '';
+            }
         }
 
         function formatPreviousVideo(video) {
@@ -420,18 +434,21 @@
             console.log('Error: ' + msg);
         }
 
+        let prioritizingByOrderInChannel = false;
+
         function sortByDaysPerMinute(respectOrderInChannel = false) {
             videos.sort((video1, video2) => video2.daysPerMinute - video1.daysPerMinute);
-
             if (respectOrderInChannel) {
                 prioritizeByOrderInChannel();
             }
-
+            prioritizingByOrderInChannel = respectOrderInChannel;
             updateVideos();
         }
 
         function prioritizeByOrderInChannel() {
             videos.forEach((video, index) => {
+                video.swappedUp = null;
+
                 const channel = channels[video.channelId]; 
                 const indexInChannel = channel.indexOf(video);
                 let indexToSwap = index;
@@ -446,12 +463,14 @@
                     const videoToReplace = videos[indexToSwap];
                     videos[index] = videoToReplace;
                     videos[indexToSwap] = video;
+                    videoToReplace.swappedUp = video;
                 }
             });
         }
 
         function sortByPlaylistPosition() {
             videos.sort((video1, video2) => parseInt(video1.playlistPosition) - parseInt(video2.playlistPosition));
+            prioritizingByOrderInChannel = false;
             updateVideos();
         }
     </script>
