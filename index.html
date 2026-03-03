@@ -78,6 +78,12 @@
             sortByLatencyButton.onclick = function() { sortByDaysPerMinute(); };
             sortByLatencyRespectingOrderInChannelButton.onclick = function() { sortByDaysPerMinute(true); };
             sortByPlaylistPositionButton.onclick = sortByPlaylistPosition;
+            if (apiKeyInput) {
+                apiKeyInput.onblur = function() {
+                    var key = (apiKeyInput.value && apiKeyInput.value.trim()) ? apiKeyInput.value.trim() : '';
+                    if (key) writeApiKeyToFile(key);
+                };
+            }
         }
 
         function ensureApiKeyAndSync() {
@@ -86,8 +92,8 @@
                 alert('Please enter your YouTube Data API key.');
                 return;
             }
+            writeApiKeyToFile(key);
             if (!apiKeySet) {
-                writeApiKeyToFile(key);
                 gapi.client.init({ apiKey: key, discoveryDocs: DISCOVERY_DOCS }).then(function() {
                     apiKeySet = true;
                     getPlaylistItems();
@@ -393,41 +399,33 @@
             });
         }
 
+        var API_KEY_STORAGE_KEY = 'youtube_playlist_sorter_api_key';
+
         function writeApiKeyToFile(key) {
-            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
-                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
-                    localstorage.root.getFile("api_key.txt", { create: true }, function (fileEntry) {
-                        fileEntry.createWriter(function (fileWriter) {
-                            fileWriter.seek(0);
-                            fileWriter.truncate(0);
-                            var blob = new Blob([key], { type: "text/plain" });
-                            fileWriter.write(blob);
-                        });
-                    });
-                });
-            });
+            try {
+                if (key) {
+                    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+                } else {
+                    localStorage.removeItem(API_KEY_STORAGE_KEY);
+                }
+            } catch (e) {
+                console.warn('Could not save API key to localStorage', e);
+            }
         }
 
         function readApiKeyFromFile() {
-            navigator.webkitPersistentStorage.requestQuota(1024 * 1024, function () {
-                window.webkitRequestFileSystem(window.PERSISTENT, 1024 * 1024, function (localstorage) {
-                    localstorage.root.getFile("api_key.txt", { create: true }, function (fileEntry) {
-                        fileEntry.file(function (file) {
-                            var reader = new FileReader();
-                            reader.onloadend = function (e) {
-                                var key = (this.result && this.result.trim()) ? this.result.trim() : '';
-                                if (key && apiKeyInput) {
-                                    apiKeyInput.value = key;
-                                    gapi.client.init({ apiKey: key, discoveryDocs: DISCOVERY_DOCS }).then(function() {
-                                        apiKeySet = true;
-                                    }).catch(function() {});
-                                }
-                            };
-                            reader.readAsText(file);
-                        }, errorHandler);
-                    });
-                });
-            });
+            try {
+                var key = localStorage.getItem(API_KEY_STORAGE_KEY);
+                key = (key && key.trim()) ? key.trim() : '';
+                if (key && apiKeyInput) {
+                    apiKeyInput.value = key;
+                    gapi.client.init({ apiKey: key, discoveryDocs: DISCOVERY_DOCS }).then(function() {
+                        apiKeySet = true;
+                    }).catch(function() {});
+                }
+            } catch (e) {
+                console.warn('Could not read API key from localStorage', e);
+            }
         }
 
         function errorHandler(e) {
