@@ -61,35 +61,59 @@
         var syncForm = document.getElementById('sync-form');
         var channelInput = document.getElementById('channel-input');
 
+        var tokenClient;
+
         /**
-         *  On load, called to load the auth2 library and API client library.
+         * On load: load gapi client only (no auth2), then init gapi.client and GIS token client.
          */
-        function handleClientLoad() {
-            setTimeout(() => gapi.load('client:auth2', initClient), 1000);
+        function handleGapiLoad() {
+            setTimeout(function() {
+                gapi.load('client', initGapiClient);
+            }, 500);
         }
 
         /**
-         *  Initializes the API client library and sets up sign-in state
-         *  listeners.
+         * Initialize gapi.client (no auth2) and then GIS Token Client.
          */
-        function initClient() {
+        function initGapiClient() {
             gapi.client.init({
-                discoveryDocs: DISCOVERY_DOCS,
-                clientId: CLIENT_ID,
-                scope: SCOPES
+                discoveryDocs: DISCOVERY_DOCS
             }).then(function () {
-                // Listen for sign-in state changes.
-                gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+                initTokenClientAndUI();
+            }).catch(function(err) {
+                console.error('gapi.client.init failed', err);
+            });
+        }
 
-                // Handle the initial sign-in state.
-                updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+        function initTokenClientAndUI() {
+            if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+                setTimeout(initTokenClientAndUI, 100);
+                return;
+            }
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: function(tokenResponse) {
+                    if (tokenResponse.error) {
+                        console.error('Token error', tokenResponse);
+                        return;
+                    }
+                    gapi.client.setToken({ access_token: tokenResponse.access_token });
+                    updateSigninStatus(true);
+                }
+            });
+            var existingToken = gapi.client.getToken && gapi.client.getToken();
+            if (existingToken && existingToken.access_token) {
+                updateSigninStatus(true);
+            } else {
+                updateSigninStatus(false);
+            }
                 authorizeButton.onclick = handleAuthClick;
                 signoutButton.onclick = handleSignoutClick;
-                syncButton.onclick = () => getPlaylistItems();
-                sortByLatencyButton.onclick = () => sortByDaysPerMinute();
-                sortByLatencyRespectingOrderInChannelButton.onclick = () => sortByDaysPerMinute(true);
+            syncButton.onclick = function() { getPlaylistItems(); };
+            sortByLatencyButton.onclick = function() { sortByDaysPerMinute(); };
+            sortByLatencyRespectingOrderInChannelButton.onclick = function() { sortByDaysPerMinute(true); };
                 sortByPlaylistPositionButton.onclick = sortByPlaylistPosition;
-            });
         }
 
         /**
@@ -111,17 +135,25 @@
         }
 
         /**
-         *  Sign in the user upon button click.
+         *  Sign in: request access token via GIS (popup).
          */
         function handleAuthClick(event) {
-            gapi.auth2.getAuthInstance().signIn();
+            if (tokenClient) tokenClient.requestAccessToken();
         }
 
         /**
-         *  Sign out the user upon button click.
+         *  Sign out: revoke token and clear gapi client token.
          */
         function handleSignoutClick(event) {
-            gapi.auth2.getAuthInstance().signOut();
+            var token = gapi.client.getToken && gapi.client.getToken();
+            if (token && token.access_token) {
+                google.accounts.oauth2.revoke(token.access_token, function() {
+                    gapi.client.setToken(null);
+                    updateSigninStatus(false);
+                });
+            } else {
+                updateSigninStatus(false);
+            }
         }
 
         /**
@@ -485,9 +517,10 @@
         }
     </script>
 
-    <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleClientLoad()"
+    <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleGapiLoad()"
         onreadystatechange="if (this.readyState === 'complete') this.onload()">
         </script>
+    <script async defer src="https://accounts.google.com/gsi/client"></script>
     <script async defer type="text/javascript"
         src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js">
         </script>
